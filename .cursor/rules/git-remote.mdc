@@ -1,0 +1,19 @@
+---
+description: 默认 git 推送目标仓库约定
+alwaysApply: true
+---
+
+# Git 推送目标
+
+除非用户明确另有要求，本项目（桌面\视觉）的所有 git 提交都推送到：
+
+```
+https://github.com/shuaiqideqo/vision-align
+```
+
+- 该地址已是本仓库 `origin`，直接 `git push origin master` 即可
+- 注意：本机直连 GitHub 会被重置，推送/拉取前设置代理
+  `$env:HTTPS_PROXY='http://127.0.0.1:7890'`（本机 7890 端口有代理）
+- 推送前先 `git rm --cached` 掉 `_commit.bat`、`_commit_msg.txt` 等临时文件，勿将临时文件推上远端
+- 子机固件（wallbot/摄像头子机）的改动属于 [wjrizh/wallbot](https://github.com/wjrizh/wallbot) 仓库，
+  不要推到本仓库

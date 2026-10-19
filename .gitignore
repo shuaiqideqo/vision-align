@@ -6,3 +6,7 @@ __pycache__/
 # git 鎿嶄綔杈呭姪鏂囦欢
 _commit.bat
 _commit_msg.txt
+# PC 验证临时产物
+code/pc_check/dbg.txt
+code/pc_check/out.txt
+code/pc_check/frame.bin
