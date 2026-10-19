@@ -1,0 +1,8 @@
+# 生成产物不入库
+输出/
+test_out.txt
+__pycache__/
+*.pyc
+# git 操作辅助文件
+_commit.bat
+_commit_msg.txt
