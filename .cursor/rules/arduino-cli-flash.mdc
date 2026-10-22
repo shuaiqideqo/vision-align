@@ -1,0 +1,41 @@
+---
+description: 摄像头子机固件用 arduino-cli 烧录（COM口），不走 Arduino IDE
+alwaysApply: true
+---
+
+# 摄像头子机烧录方式（固定）
+
+用户说「烧录」时，用 **arduino-cli 命令行**，不要开 Arduino IDE，也不要用 PlatformIO 替代（除非用户另行指定）。
+
+## 工具链
+
+```
+C:\Tools\arduino-cli\arduino-cli.exe
+  └─ esp32 核心 3.3.12（自带交叉编译器 + esptool）
+      └─ esptool 经串口 → ESP32-S3 ROM 引导 → 写 Flash
+```
+
+## 板型 / FQBN
+
+- 芯片：ESP32-S3，8MB Flash，OPI PSRAM
+- FQBN：`esp32:esp32:esp32s3:FlashSize=8M,PSRAM=opi,PartitionScheme=default_8MB`
+
+## 默认路径与串口
+
+- Sketch：`C:\Users\Administrator\Desktop\视觉\摄像头子机`（本仓库改动以这里为准）
+- 串口：用户点名时用其端口；未点名时常用 `COM4`（CH340）
+- 若用户明确要烧 wallbot 仓库副本，才改用 `Desktop\wallbot\摄像头子机`
+
+## 推荐命令（先 compile 再 upload）
+
+```powershell
+$cli = 'C:\Tools\arduino-cli\arduino-cli.exe'
+$sketch = 'C:\Users\Administrator\Desktop\视觉\摄像头子机'
+$fqbn = 'esp32:esp32:esp32s3:FlashSize=8M,PSRAM=opi,PartitionScheme=default_8MB'
+$port = 'COM4'   # 以用户当次指定为准
+
+& $cli compile --fqbn $fqbn --build-path "$env:TEMP\camchild_build" $sketch
+& $cli upload -p $port --fqbn $fqbn --input-dir "$env:TEMP\camchild_build" $sketch
+```
+
+esptool 会通过 DTR/RTS 自动进下载模式，写完 Hard reset 重启。成功标准：`UPLOAD_EXIT=0` 且出现 `Hard resetting via RTS pin...`。

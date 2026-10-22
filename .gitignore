@@ -6,7 +6,11 @@ __pycache__/
 # git 鎿嶄綔杈呭姪鏂囦欢
 _commit.bat
 _commit_msg.txt
-# PC 验证临时产物
+# PC 锟斤拷证锟斤拷时锟斤拷锟斤拷
 code/pc_check/dbg.txt
 code/pc_check/out.txt
 code/pc_check/frame.bin
+
+.venv/
+build/
+camchild_fw/

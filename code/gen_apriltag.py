@@ -16,14 +16,14 @@ from tag_utils import ARUCO_DICT, TAG_REAL_MM, imwrite_u
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "输出")
 
 
-def make_tag_image(size_mm=TAG_REAL_MM, with_arrow=True):
+def make_tag_image(size_mm=TAG_REAL_MM, with_arrow=True, tag_id=0):
     """生成标签图像(含白色静区; with_arrow=True 时上沿加方向箭头)。
     返回 (img, marker_px)：marker_px = 黑框边长像素，仿真测试用它换算世界尺寸。"""
     px = round(size_mm * 300 / 25.4)          # 300dpi
     try:
-        marker = cv2.aruco.generateImageMarker(ARUCO_DICT, 0, px)  # ID=0, OpenCV>=4.7
+        marker = cv2.aruco.generateImageMarker(ARUCO_DICT, int(tag_id), px)
     except AttributeError:
-        marker = cv2.aruco.drawMarker(ARUCO_DICT, 0, px)           # 旧版API
+        marker = cv2.aruco.drawMarker(ARUCO_DICT, int(tag_id), px)
     # 白边 = 静区(识别必需) + 箭头区；箭头画在外圈，紧贴标签的约1圈静区保持干净
     pad = max(90, round(px * 0.25))
     img = cv2.copyMakeBorder(marker, pad, pad, pad, pad,
@@ -38,11 +38,13 @@ def make_tag_image(size_mm=TAG_REAL_MM, with_arrow=True):
 
 
 def main():
-    # 尺寸可选: python gen_apriltag.py [边长mm], 默认50(桌面测试); 实机按需放大
+    # 用法: python gen_apriltag.py [边长mm] [id]
+    # 双码: python gen_apriltag.py 22 0 && python gen_apriltag.py 22 1
     size_mm = float(sys.argv[1]) if len(sys.argv) > 1 else TAG_REAL_MM
-    tag, _ = make_tag_image(size_mm)
+    tag_id = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+    tag, _ = make_tag_image(size_mm, tag_id=tag_id)
     out_path = os.path.abspath(
-        os.path.join(OUT_DIR, "apriltag_id0_%dmm.png" % round(size_mm)))
+        os.path.join(OUT_DIR, "apriltag_id%d_%dmm.png" % (tag_id, round(size_mm))))
     if not imwrite_u(out_path, tag):
         print("写入失败:", out_path); sys.exit(1)
     print("已生成:", out_path)

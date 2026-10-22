@@ -31,9 +31,13 @@ except AttributeError:
         corners, ids, _ = cv2.aruco.detectMarkers(img, ARUCO_DICT, parameters=_PARAMS)
         return corners, ids
 
-TAG_REAL_MM = 50.0   # 标签黑框真实边长(mm)，打印后用卡尺/直尺实测，改这里
-R_TAG_MM = 60.0      # ★标签黑框中心平面到管道轴线的垂直距离(mm)，贴好后必须实测填入
-PIPE_RADIUS_MM = 60.0  # 管道内半径(mm)，仅用于把 phi 换算成沿管壁应走的弧长，粗估即可
+TAG_REAL_MM = 22.0   # 单枚码黑框边长(mm)；双码模式比例尺用 DUAL_TAG_SEP_MM
+DUAL_TAG_SEP_MM = 40.0  # ★两码中心实测距(mm)，与固件 DUAL_TAG_SEP_MM 一致，卡尺后改
+TAG_ID_A = 0
+TAG_ID_B = 1
+LANDMARK_MM = DUAL_TAG_SEP_MM  # 默认双码基线；单码测试可临时改回 TAG_REAL_MM
+R_TAG_MM = 395.0      # ★路标中心平面到管道轴线的垂直距离(mm)，贴好后必须实测填入
+PIPE_RADIUS_MM = 250.0  # 管道内半径(mm)，仅用于把 phi 换算成沿管壁应走的弧长，粗估即可
 
 
 def imread_u(path, flags=cv2.IMREAD_COLOR):
@@ -111,7 +115,9 @@ def delta_report(tag, ref):
     th = ref["theta"]
     dir_ax = (math.cos(th), math.sin(th))       # 图像里管道轴线方向
     dir_pp = (-math.sin(th), math.cos(th))      # 垂直管道方向
-    scale = TAG_REAL_MM / max(tag["edge_a"], 1e-9)
+    # 单码观测无 landmark_mm 时退回 TAG_REAL_MM; 双码 fuse 会显式写入 DUAL_TAG_SEP_MM
+    landmark_mm = tag.get("landmark_mm", TAG_REAL_MM)
+    scale = landmark_mm / max(tag["edge_a"], 1e-9)
     du, dv = tag["u"] - ref["u"], tag["v"] - ref["v"]
     axial_mm = (du * dir_ax[0] + dv * dir_ax[1]) * scale
     perp_mm = (du * dir_pp[0] + dv * dir_pp[1]) * scale
@@ -126,3 +132,69 @@ def delta_report(tag, ref):
 def arc_mm_for(deg):
     """周向偏转 deg 度 -> 沿管壁应行走的弧长(mm)。正负号即行走方向（上机确认）。"""
     return math.radians(deg) * PIPE_RADIUS_MM
+
+def detect_all_tags(img):
+    """检出画面中全部 tag36h11, 返回 list[dict] (含 id 字段)。"""
+    corners, ids = _detect(img)
+    if ids is None or len(ids) == 0:
+        return []
+    out = []
+    for i, marker_id in enumerate(ids.ravel()):
+        c = corners[i][0].astype(np.float64)
+        u, v = float(c[:, 0].mean()), float(c[:, 1].mean())
+        theta = math.atan2(c[1, 1] - c[0, 1], c[1, 0] - c[0, 0])
+        e01 = float(np.linalg.norm(c[1] - c[0]))
+        e12 = float(np.linalg.norm(c[2] - c[1]))
+        e23 = float(np.linalg.norm(c[3] - c[2]))
+        e30 = float(np.linalg.norm(c[0] - c[3]))
+        edge_a = 0.5 * (e01 + e23)
+        edge_p = 0.5 * (e12 + e30)
+        out.append(dict(id=int(marker_id), u=u, v=v, theta=theta,
+                        edge_a=edge_a, edge_p=edge_p, edge_px=edge_a, corners=c))
+    return out
+
+
+def fuse_dual_obs(ta, tb, landmark_mm=None):
+    """两枚码观测融合, 与固件 DualTagDetector 一致。
+    小 ID -> 大 ID 定朝向, 消 180; landmark_mm 默认 DUAL_TAG_SEP_MM。
+    """
+    lo, hi = (ta, tb) if ta["id"] <= tb["id"] else (tb, ta)
+    dx = hi["u"] - lo["u"]
+    dy = hi["v"] - lo["v"]
+    dist = math.hypot(dx, dy)
+    if dist < 1e-6:
+        dist = 1e-6
+    return dict(
+        id=lo["id"], id_b=hi["id"],
+        u=0.5 * (lo["u"] + hi["u"]),
+        v=0.5 * (lo["v"] + hi["v"]),
+        theta=math.atan2(dy, dx),
+        edge_a=dist, edge_p=dist, edge_px=dist,
+        landmark_mm=DUAL_TAG_SEP_MM if landmark_mm is None else landmark_mm,
+        corners=np.vstack([lo["corners"], hi["corners"]]),
+        tags=(lo, hi),
+    )
+
+
+def detect_dual_tags(img, id_a=None, id_b=None):
+    """检出指定两枚码并融合。成功返回 (fused, 'ok'); 失败返回 (None, reason)。
+    reason: no_tag | need_two_tags
+    """
+    if id_a is None:
+        id_a = TAG_ID_A
+    if id_b is None:
+        id_b = TAG_ID_B
+    all_tags = detect_all_tags(img)
+    by_id = {}
+    for t in all_tags:
+        prev = by_id.get(t["id"])
+        if prev is None or t["edge_a"] > prev["edge_a"]:
+            by_id[t["id"]] = t
+    have_a = id_a in by_id
+    have_b = id_b in by_id
+    n = int(have_a) + int(have_b)
+    if n == 0:
+        return None, "no_tag"
+    if n == 1:
+        return None, "need_two_tags"
+    return fuse_dual_obs(by_id[id_a], by_id[id_b]), "ok"

@@ -20,12 +20,13 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CODE_DIR = os.path.dirname(HERE)
-FW_DIR = r"C:\Users\Administrator\Desktop\wallbot\摄像头子机"
+ROOT_DIR = os.path.dirname(CODE_DIR)
+FW_DIR = os.path.join(ROOT_DIR, "摄像头子机")
 EXE = os.path.join(HERE, "test.exe")
 FRAME = os.path.join(HERE, "frame.bin")
 
-W, H = 320, 240
-TAG_MM = 50.0          # 与固件 config.h 一致
+W, H = 320, 240        # PC 合成画布; 板端实机检测为 SVGA, 算法与分辨率无关
+TAG_MM = 22.0          # 与固件 config.h 一致 (实物 22mm)
 R_TAG_MM = 60.0
 PIPE_R = 60.0
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
@@ -163,8 +164,8 @@ def measure(name, ref_frame_kw, meas_frame_kw, expect):
     o = run_exe(make_frame(**meas_frame_kw)[0])
     if o is None:
         return err("测量帧未检出")
-    # 固件侧 align_measure 的解算在这里复现
-    th = math.radians(o["theta_deg"])
+    # 固件侧 align_measure: 管道方向由参考位 theta 定义 (不是当前帧)
+    th = ref["theta"]
     dir_ax = (math.cos(th), math.sin(th))
     dir_pp = (-math.sin(th), math.cos(th))
     scale = TAG_MM / o["edge_a"]
@@ -199,6 +200,9 @@ def main():
         total += check(f"旋转 rot={rot}", rot, (160, 120), 100)
     for edge in (40, 70, 140):
         total += check(f"尺寸 edge={edge}", 20, (160, 120), edge)
+    # 22mm @ ~30cm / SVGA 约 40~50px; 用小边长回归贴近远距工况
+    for edge in (40, 46, 50):
+        total += check(f"远距小码 edge={edge}", 15, (160, 120), edge)
     total += check("离中心 (60,70)", 25, (60, 70), 90)
     total += check("透视 tilt=15", 35, (160, 120), 100, tilt=15)
     total += check("噪声 sigma=10", 50, (160, 120), 100, noise=10)
@@ -217,13 +221,15 @@ def main():
     total += measure("纯 psi=-6°", ref_kw,
                      dict(rot_deg=-6, center=(160.0, 120.0), edge_px=100.0),
                      dict(phi=0.0, psi=-6.0, arc=0.0, axial=0.0))
-    # 组合: phi + psi=5° + 轴向前进 +10px (用当前帧比例尺换算, 与固件一致)
+    # 组合: phi≈4° + psi=5° + 轴向前进 +10px (用当前帧比例尺换算, 与固件一致)
     perp_px = R_TAG_MM * math.sin(math.radians(4)) / mmpp
     scale_meas = TAG_MM / 90.0
+    perp_mm = perp_px * scale_meas
+    phi_exp = math.degrees(math.asin(max(-1.0, min(1.0, perp_mm / R_TAG_MM))))
     total += measure("组合 phi+psi+axial", ref_kw,
                      dict(rot_deg=5, center=(160.0 + 10, 120.0 + perp_px), edge_px=90.0),
-                     dict(phi=math.degrees(math.asin(8 * scale_meas / R_TAG_MM)),
-                          psi=5.0, arc=math.asin(8 * scale_meas / R_TAG_MM) * PIPE_R,
+                     dict(phi=phi_exp, psi=5.0,
+                          arc=math.radians(phi_exp) * PIPE_R,
                           axial=10 * scale_meas))
 
     print()
